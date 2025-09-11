@@ -1,0 +1,319 @@
+# Prompt: MMS — Fullstack scaffold V3 (Cursor-ready) — UPDATED with Service-Only (Service Fee) support
+You are building a fullstack web app called **Maintenance Management System (MMS)**.
+Stack: **React (Vite) frontend, Supabase (Postgres + Auth) backend, deployed on Vercel**.
+The app must be PWA, responsive, accessible, support Dark/Light themes, and include import/export, global search, scrap parts (هالك)، device replacements، printable receipts/vouchers/reports, and Service-Only maintenance requests (with Service Fee).
+
+--- OVERVIEW / GOALS
+Generate a complete runnable project with:
+- schema.sql (full DB schema + indexes + RLS policy stubs)
+- rpc.sql (stored procedures with transactions + activity_log inserts)
+- seed.sql (creates centers, sample data, and auto-creates first super_admin user profile row)
+- /frontend React scaffold (Vite) with ThemeProvider (dark/light), routes, and implemented pages: Login, Dashboard, Requests, RequestDetail, ImportExport, GlobalSearch, Inventory, ScrapParts, Replacements, Sales, Users, ActivityLog, Reports.
+- /lib/supabase.js (client)
+- /utils/csv.js (import/export utilities)
+- print templates/components for: Maintenance receipt, Sales invoice, Stock In voucher, Stock Out voucher, Item Movement report
+- example CSVs: spare_parts.csv, inventory_seed.csv, customers_seed.csv
+- README.md with exact setup + deploy instructions
+
+--- 1) DATABASE (schema.sql)
+Create tables with created_at and updated_at. Include comments.
+
+Core tables (with Service-Only fields added):
+
+- users (
+    id UUID PRIMARY KEY REFERENCES auth.users(id),
+    name text,
+    phone text,
+    address text,
+    role text CHECK(role IN ('super_admin','center_manager','receptionist','technician','storekeeper','customer')),
+    center_id int NULL REFERENCES centers(id),
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now()
+)
+
+- centers (id serial PRIMARY KEY, name text, address text, created_at timestamptz DEFAULT now())
+
+- customers (
+    id serial PRIMARY KEY, name text, phone text, address text, type text CHECK(type IN ('distributor','consumer')),
+    created_by uuid REFERENCES users(id), created_at timestamptz DEFAULT now()
+)
+
+- devices (
+    id serial PRIMARY KEY,
+    customer_id int REFERENCES customers(id),
+    name text,
+    serial_number text,
+    warranty boolean DEFAULT false,
+    warranty_expiry date NULL,
+    accessories jsonb DEFAULT '[]'::jsonb,
+    status text CHECK(status IN ('active','replaced','archived')) DEFAULT 'active',
+    created_by uuid,
+    created_at timestamptz DEFAULT now()
+)
+
+- maintenance_requests (
+    id serial PRIMARY KEY,
+    customer_id int REFERENCES customers(id),
+    device_id int REFERENCES devices(id),
+    issue text,
+    under_warranty boolean,
+    -- Service-Only support:
+    service_only boolean DEFAULT false,           -- true if no spare parts used
+    service_fee numeric DEFAULT 0,                -- fee amount (0 => free)
+    service_fee_type text CHECK(service_fee_type IN ('free','paid')) DEFAULT 'free',
+    -- end service fields
+    status text CHECK(status IN ('new','assigned','in_progress','waiting_parts','fixed','cannot_repair','delivered','closed')) DEFAULT 'new',
+    created_by uuid,
+    assigned_to uuid NULL,
+    center_id int REFERENCES centers(id),
+    created_at timestamptz DEFAULT now()
+)
+
+- followups (
+    id serial PRIMARY KEY,
+    request_id int REFERENCES maintenance_requests(id),
+    technician_id uuid REFERENCES users(id),
+    status text CHECK(status IN ('in_progress','waiting_parts','fixed','cannot_repair')),
+    note text,
+    created_at timestamptz DEFAULT now()
+)
+
+- spare_parts (
+    id serial PRIMARY KEY,
+    code text UNIQUE,
+    name text,
+    price numeric,
+    warranty boolean DEFAULT false,
+    created_at timestamptz DEFAULT now()
+)
+
+- inventory (
+    id serial PRIMARY KEY,
+    part_id int REFERENCES spare_parts(id),
+    center_id int REFERENCES centers(id),
+    qty_added int DEFAULT 0,
+    qty_available int DEFAULT 0,
+    qty_sold int DEFAULT 0,
+    qty_reserved int DEFAULT 0,
+    updated_at timestamptz DEFAULT now()
+)
+
+- stock_movements (
+    id serial PRIMARY KEY,
+    part_id int REFERENCES spare_parts(id),
+    center_id int REFERENCES centers(id),
+    type text CHECK(type IN ('add','issue','return','scrap')),
+    quantity int,
+    created_by uuid REFERENCES users(id),
+    created_at timestamptz DEFAULT now(),
+    related_request_id int NULL REFERENCES maintenance_requests(id),
+    meta jsonb NULL
+)
+
+- sales (
+    id serial PRIMARY KEY,
+    customer_id int REFERENCES customers(id),
+    part_id int REFERENCES spare_parts(id),
+    price numeric,
+    discount numeric,
+    total numeric,
+    created_by uuid,
+    center_id int,
+    created_at timestamptz DEFAULT now()
+)
+
+- activity_log (
+    id serial PRIMARY KEY,
+    user_id uuid NULL,
+    action text,
+    entity text,
+    entity_id int NULL,
+    meta jsonb NULL,
+    created_at timestamptz DEFAULT now()
+)
+
+-- V2/V3 additions:
+- scrap_parts (
+    id serial PRIMARY KEY,
+    part_id int REFERENCES spare_parts(id),
+    center_id int REFERENCES centers(id),
+    quantity int NOT NULL,
+    reason text,
+    related_request_id int NULL REFERENCES maintenance_requests(id),
+    created_by uuid REFERENCES users(id),
+    created_at timestamptz DEFAULT now()
+)
+
+- device_replacements (
+    id serial PRIMARY KEY,
+    customer_id int REFERENCES customers(id),
+    old_device_id int REFERENCES devices(id),
+    new_device_id int REFERENCES devices(id),
+    reason text,
+    created_by uuid REFERENCES users(id),
+    center_id int,
+    created_at timestamptz DEFAULT now()
+)
+
+Indexes:
+- Add indexes on maintenance_requests(status), maintenance_requests(center_id), maintenance_requests(created_at)
+- Index spare_parts(code), devices(serial_number), customers(phone)
+- FK indexes on part_id, center_id etc.
+
+RLS Policies (stubs and examples):
+- Enable row level security on sensitive tables and provide policy templates:
+  - super_admin: full access
+  - center_manager: access only where center_id = (SELECT center_id FROM users WHERE id = auth.uid())
+  - receptionist: insert on customers/requests for their center; select center requests
+  - technician: select only maintenance_requests where assigned_to = auth.uid(); insert on followups where technician_id = auth.uid()
+  - storekeeper: full inventory management for their center
+  - customer: select their own customers/devices/requests/sales by linking phone or customer id mapping
+
+Provide a helper SQL snippet or view `current_user_center()` to map auth.uid() → users.center_id.
+
+--- 2) RPCs & TRIGGERS (rpc.sql)
+Create stored procedures with transactions and activity_log insertions. Provide SQL implementations and examples of how to call them.
+
+Required RPCs (with input validation & transactions):
+- assign_request(request_id int, technician_id uuid, manager_id uuid)
+  - set assigned_to, set status='assigned' and insert activity_log
+
+- close_request(request_id int, manager_id uuid)
+  - set status='closed' and insert activity_log
+
+- add_stock(part_id int, center_id int, qty int, user_id uuid)
+  - transaction: insert stock_movements(type='add'), update/increment inventory.qty_added and qty_available, update inventory.updated_at, insert activity_log
+
+- issue_stock(part_id int, center_id int, qty int, user_id uuid, request_id int)
+  - check qty_available >= qty; if ok: insert stock_movements(type='issue'), decrement inventory.qty_available, increment qty_sold or qty_reserved according to context, insert activity_log; otherwise return error
+
+- return_stock(part_id int, center_id int, qty int, user_id uuid, request_id int)
+  - reverse issue: stock_movements(type='return'), update inventory, activity_log
+
+- mark_scrap(part_id int, center_id int, qty int, reason text, related_request_id int NULL, user_id uuid)
+  - insert into scrap_parts, decrement inventory.qty_available, insert stock_movements(type='scrap'), insert activity_log
+
+- create_sale(customer_id int, part_id int, price numeric, discount numeric, user_id uuid, center_id int)
+  - compute total, insert sales row, call issue_stock RPC, insert activity_log
+
+- create_device_replacement(customer_id int, old_device_id int, new_device_meta jsonb, reason text, created_by uuid, center_id int)
+  - create new device row (from new_device_meta), update old device status='replaced', insert device_replacements row, insert activity_log
+
+- create_service_only_charge(request_id int, user_id uuid, amount numeric, note text)
+  - validate that maintenance_requests.service_only = true for request_id
+  - insert a record into activity_log with action 'service_fee_charged' and meta { amount, note }
+  - (optional) create a small `service_charges` table or return the computed invoice item
+  - if billing flow requires, create a linked sales/invoice row or a `request_charges` row (design choice — include both an example "request_charges" table and example RPC that inserts into it)
+
+Also:
+- create triggers to update updated_at, and a trigger to insert activity_log on basic CRUD for tables that need audit if RPCs aren't used.
+
+--- 3) IMPORT / EXPORT (utils + UI)
+- Provide example CSVs: spare_parts.csv, inventory_seed.csv, customers_seed.csv
+- Implement /utils/csv.js:
+  - exportToCSV(data, filename) client-side (papaparse or simple CSV generator)
+  - parseCSVFile(file) => JSON (with validation & preview)
+  - bulkInsertToTable(records, tableName) example using Supabase client with batching
+- Frontend component CSVUploader.jsx:
+  - preview rows, map columns, validate, confirm, then call backend or supabase inserts (or call RPC for inventory mapping part_code→id & center_name→id)
+- Add ImportExport.jsx page to handle spare_parts/customers/inventory import and export
+
+--- 4) FRONTEND SCAFFOLD (React)
+Folder structure to generate:
+/frontend
+  /src
+    /lib/supabase.js
+    /utils/csv.js
+    /components
+      /layout (Sidebar.jsx, Topbar.jsx, ThemeToggle.jsx, AppLayout.jsx)
+      /common (Button.jsx, Table.jsx, Modal.jsx, FormInput.jsx, DashboardWidget.jsx, Chart.jsx, CSVUploader.jsx, SearchBar.jsx)
+      /requests (RequestCard.jsx, RequestTimeline.jsx)
+      /inventory (InventoryRow.jsx, StockMovementModal.jsx)
+    /pages
+      Login.jsx
+      Dashboard.jsx
+      Customers.jsx
+      CustomerDetail.jsx
+      Devices.jsx
+      Requests.jsx
+      RequestDetail.jsx
+      Followups.jsx
+      Inventory.jsx
+      SpareParts.jsx
+      Sales.jsx
+      Users.jsx
+      ActivityLog.jsx
+      Reports.jsx
+      Delivery.jsx
+      ImportExport.jsx
+      GlobalSearch.jsx
+      ScrapParts.jsx
+      Replacements.jsx
+    routes.jsx
+    App.jsx
+    theme.js
+    index.css
+    manifest.json
+    service-worker.js
+
+Frontend features & requirements:
+- ThemeProvider with tokens for Light & Dark; store choice in localStorage; respect system preference
+- Sidebar collapsible, topbar with user menu, notifications, theme toggle
+- Reusable Table: search, column filters, sort, pagination
+- Global Search page: single input with debounce 300ms, runs parallel queries (requests, customers, spare_parts), displays grouped tabs with counts
+- Requests page: create/edit, filters (status, date range, customer, technician), assign modal calls RPC assign_request, request detail shows timeline, followups, parts used (linked to stock_movements), actions: request part (calls issue_stock), mark scrap (calls mark_scrap), replace device (calls create_device_replacement)
+- Inventory page: colored badges for levels, quick actions: Add Stock (calls add_stock), Issue Stock (calls issue_stock), Return Stock, Mark Scrap (opens modal to call mark_scrap)
+- ScrapParts page: list scrap entries, filter by date/part/center, reverse if needed (call return_stock)
+- Replacements page: list replacements with links to old/new devices
+- ImportExport page: CSVUploader + mapping tool
+- Reports page: Item Movement Report (filter by part/date/center) — shows list of stock_movements and aggregate totals (added, issued, returned, scrapped)
+- Print pages: /print/request/:id, /print/invoice/:id, /print/stockin/:id, /print/stockout/:id, /print/movement/:part_id with print-friendly layouts and QR codes
+- PWA: include manifest & simple service worker for offline shell
+
+Provide at least these fully implemented examples:
+- Requests.jsx (list + create)
+- RequestDetail.jsx (timeline + followups + assign + request part + replace device + print maintenance receipt)
+- ImportExport.jsx (CSV upload preview & bulk insert for spare_parts)
+- GlobalSearch.jsx (search bar + results tabs)
+
+--- 5) /lib/supabase.js
+- Provide initialized Supabase client using env vars:
+  - VITE_SUPABASE_URL
+  - VITE_SUPABASE_ANON_KEY
+- Provide sample API wrappers:
+  - getCustomers(params)
+  - createCustomer(payload)
+  - getDevicesByCustomer(customer_id)
+  - createMaintenanceRequest(payload)
+  - assignRequest(request_id, technician_id) -> supabase.rpc('assign_request', {...})
+  - addFollowUp(request_id, payload)
+  - addStock(part_id, center_id, qty)
+  - issueStock(part_id, center_id, qty, request_id)
+  - markScrap(part_id, center_id, qty, reason, request_id)
+  - createSale(...)
+  - bulkInsertParts(partsArray)
+  - searchRequests(query)
+  - globalSearch(query)
+Include error handling and examples of optimistic UI updates.
+
+--- 6) SEARCH implementation
+- Use Supabase `.or()` with `ilike` for partial matches
+- Requests search fields: id, issue, customers.name, devices.name, devices.serial_number, status, created_at (date range)
+- Spare parts search: code, name, warranty
+- Customers search: name, phone, type
+- GlobalSearch: Promise.all for three queries, combine results into grouped UI, show counts
+- Add debounce 300ms and loading/error states
+
+Example snippet to include in repo:
+```js
+const searchRequests = async (q) => {
+  const orQuery = `id::text.ilike.%${q}%,
+    issue.ilike.%${q}%,
+    customers.name.ilike.%${q}%,
+    devices.name.ilike.%${q}%,
+    devices.serial_number.ilike.%${q}%`;
+  return supabase
+    .from('maintenance_requests')
+    .select('id,issue,status,created_at,customers(name,phone),devices(name,serial_number)')
+    .or(orQuery);
+};
