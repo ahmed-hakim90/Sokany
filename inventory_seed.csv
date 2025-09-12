@@ -1,0 +1,16 @@
+part_code,center_name,qty_added,qty_available,qty_sold,qty_reserved
+SP001,Main Service Center,50,45,5,0
+SP002,Main Service Center,30,25,5,0
+SP003,Main Service Center,20,18,2,0
+SP004,Main Service Center,40,35,5,0
+SP005,Main Service Center,100,90,10,0
+SP001,North Branch,30,25,5,0
+SP002,North Branch,20,15,5,0
+SP003,North Branch,15,12,3,0
+SP004,North Branch,25,20,5,0
+SP005,North Branch,60,50,10,0
+SP001,South Branch,25,20,5,0
+SP002,South Branch,15,10,5,0
+SP003,South Branch,12,9,3,0
+SP004,South Branch,20,15,5,0
+SP005,South Branch,50,40,10,0

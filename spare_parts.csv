@@ -1,0 +1,16 @@
+code,name,price,warranty
+SP001,Samsung Galaxy S21 Screen,150.00,true
+SP002,iPhone 12 Battery,80.00,true
+SP003,MacBook Pro Charger,120.00,true
+SP004,Dell Laptop Keyboard,45.00,false
+SP005,HP Printer Cartridge,25.00,false
+SP006,Sony Headphone Cable,15.00,false
+SP007,Canon Camera Lens,300.00,true
+SP008,Nintendo Switch Joy-Con,40.00,true
+SP009,Xbox Controller,60.00,true
+SP010,PlayStation DualShock,55.00,true
+SP011,Generic USB Cable,8.00,false
+SP012,Power Bank 10000mAh,35.00,true
+SP013,Bluetooth Speaker,75.00,true
+SP014,Smart Watch Band,20.00,false
+SP015,Tablet Screen Protector,12.00,false
