@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, User, Shield, UserCog, Wrench, Package, ShoppingCart, Users } from 'lucide-react'
+import { Plus, User, Shield, UserCog, Wrench, Package, ShoppingCart, Users as UsersIcon } from 'lucide-react'
 import { api } from '../lib/supabase'
 import Button from '../components/common/Button'
 import Table from '../components/common/Table'
@@ -94,7 +94,7 @@ const Users = () => {
       receptionist: User,
       technician: Wrench,
       storekeeper: Package,
-      customer: Users
+      customer: UsersIcon
     }
     return icons[role] || User
   }
