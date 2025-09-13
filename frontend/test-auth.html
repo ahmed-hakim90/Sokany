@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Test</title>
+</head>
+<body>
+    <h1>Supabase Auth Test</h1>
+    <div id="status">Testing...</div>
+    
+    <script type="module">
+        import { createClient } from 'https://cdn.skypack.dev/@supabase/supabase-js@2'
+        
+        const supabaseUrl = 'https://btniftxfffufgupfyjxq.supabase.co'
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0bmlmdHhmZmZ1Zmd1cGZ5anhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2MzM5NTQsImV4cCI6MjA3MzIwOTk1NH0.AAEdwY-Q7EnqISbBdrFPV41MhhYYxxMNNKizK83wf1A'
+        
+        const supabase = createClient(supabaseUrl, supabaseKey)
+        
+        async function testAuth() {
+            try {
+                const { data, error } = await supabase.auth.getUser()
+                document.getElementById('status').innerHTML = `
+                    <p>Auth Test Result:</p>
+                    <p>Data: ${JSON.stringify(data)}</p>
+                    <p>Error: ${JSON.stringify(error)}</p>
+                    <p>User: ${data?.user ? 'Found' : 'Not found'}</p>
+                `
+            } catch (err) {
+                document.getElementById('status').innerHTML = `Error: ${err.message}`
+            }
+        }
+        
+        testAuth()
+    </script>
+</body>
+</html>
