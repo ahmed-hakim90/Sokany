@@ -333,8 +333,8 @@ CREATE OR REPLACE FUNCTION mark_scrap(
     center_id INTEGER,
     qty INTEGER,
     reason TEXT,
-    related_request_id INTEGER DEFAULT NULL,
-    user_id UUID
+    user_id UUID,
+    related_request_id INTEGER DEFAULT NULL
 )
 RETURNS JSON AS $$
 DECLARE
@@ -414,9 +414,9 @@ CREATE OR REPLACE FUNCTION create_sale(
     customer_id INTEGER,
     part_id INTEGER,
     price NUMERIC,
-    discount NUMERIC DEFAULT 0,
     user_id UUID,
-    center_id INTEGER
+    center_id INTEGER,
+    discount NUMERIC DEFAULT 0
 )
 RETURNS JSON AS $$
 DECLARE
@@ -460,7 +460,7 @@ BEGIN
     BEGIN
         -- Create sale record
         INSERT INTO sales (customer_id, part_id, price, discount, total, created_by, center_id)
-        VALUES (customer_id, part_id, price, discount, total_amount, user_id, center_id);
+        VALUES (customer_id, part_id, price, COALESCE(discount, 0), total_amount, user_id, center_id);
 
         -- Issue stock (assuming 1 quantity for now, can be parameterized)
         PERFORM issue_stock(part_id, center_id, 1, user_id, NULL);
