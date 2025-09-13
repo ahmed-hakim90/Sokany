@@ -26,32 +26,32 @@ export const api = {
   },
 
   async getCurrentUser() {
-    const { data: { user } } = await supabase.auth.getUser()
-    return user
+    const { data, error } = await supabase.auth.getUser()
+    return { data, error }
   },
 
   // User functions
   async getCurrentUserProfile() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { data: null, error: null }
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError || !authData?.user) return { data: null, error: authError }
 
     const { data, error } = await supabase
       .from('users')
       .select('*')
-      .eq('id', user.id)
+      .eq('id', authData.user.id)
       .single()
 
     return { data, error }
   },
 
   async updateUserProfile(updates) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { data: null, error: { message: 'Not authenticated' } }
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError || !authData?.user) return { data: null, error: { message: 'Not authenticated' } }
 
     const { data, error } = await supabase
       .from('users')
       .update(updates)
-      .eq('id', user.id)
+      .eq('id', authData.user.id)
       .select()
       .single()
 

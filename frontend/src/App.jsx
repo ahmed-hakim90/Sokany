@@ -34,11 +34,17 @@ function App() {
     // Check for existing session
     const checkUser = async () => {
       try {
-        const { data: { user } } = await api.getCurrentUser()
-        if (user) {
+        const { data, error } = await api.getCurrentUser()
+        if (data?.user) {
           // Get user profile
-          const { data: profile } = await api.getCurrentUserProfile()
-          setUser(profile)
+          const { data: profile, error: profileError } = await api.getCurrentUserProfile()
+          if (profileError) {
+            console.error('Error getting user profile:', profileError)
+            // If profile doesn't exist, user might need to complete setup
+            setUser(null)
+          } else {
+            setUser(profile)
+          }
         }
       } catch (error) {
         console.error('Error checking user:', error)
