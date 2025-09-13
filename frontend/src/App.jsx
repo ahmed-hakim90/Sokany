@@ -34,10 +34,16 @@ function App() {
     // Check for existing session
     const checkUser = async () => {
       try {
+        console.log('Checking user...')
         const { data, error } = await api.getCurrentUser()
+        console.log('Auth response:', { data, error })
+        
         if (data?.user) {
+          console.log('User found, getting profile...')
           // Get user profile
           const { data: profile, error: profileError } = await api.getCurrentUserProfile()
+          console.log('Profile response:', { profile, profileError })
+          
           if (profileError) {
             console.error('Error getting user profile:', profileError)
             // If profile doesn't exist, user might need to complete setup
@@ -45,9 +51,13 @@ function App() {
           } else {
             setUser(profile)
           }
+        } else {
+          console.log('No user found')
+          setUser(null)
         }
       } catch (error) {
         console.error('Error checking user:', error)
+        setUser(null)
       } finally {
         setLoading(false)
       }
@@ -56,11 +66,17 @@ function App() {
     checkUser()
 
     // Listen for auth changes
-    const { data: { subscription } } = api.supabase.auth.onAuthStateChange(
+    const authStateChange = api.supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state change:', { event, session })
         if (session?.user) {
-          const { data: profile } = await api.getCurrentUserProfile()
-          setUser(profile)
+          const { data: profile, error: profileError } = await api.getCurrentUserProfile()
+          if (profileError) {
+            console.error('Error getting user profile:', profileError)
+            setUser(null)
+          } else {
+            setUser(profile)
+          }
         } else {
           setUser(null)
         }
@@ -68,7 +84,11 @@ function App() {
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      if (authStateChange?.data?.subscription) {
+        authStateChange.data.subscription.unsubscribe()
+      }
+    }
   }, [])
 
   const handleSignOut = async () => {
